@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "lit=false": {
+      "model": "spore:block/brain_remnants"
+    },
+    "lit=true": {
+      "model": "spore:block/fire"
+    }
+  }
+}

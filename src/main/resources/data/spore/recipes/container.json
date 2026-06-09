@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "RRR",
+    "T#T",
+    "RRR"
+  ],
+  "key": {
+    "R": {
+      "item": "spore:compound_plate"
+    },
+    "#": {
+      "item": "minecraft:water_bucket"
+    },
+    "T": {
+      "item": "minecraft:glass"
+    }
+  },
+  "result": {
+    "count": 2,
+    "item": "spore:container"
+  }
+}

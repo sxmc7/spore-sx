@@ -1,0 +1,40 @@
+{
+  "display": {
+    "icon": {
+      "item": "spore:leaper_spawnegg"
+    },
+    "title":{"translate": "advancement.spore.leaper.title"},
+    "description":{"translate": "advancement.spore.leaper.description"},
+    "show_toast": true,
+    "announce_to_chat": false,
+    "hidden": true
+  },
+
+  "parent": "spore:inf_villager",
+  "criteria": {
+    "hurt_infected": {
+      "trigger": "minecraft:player_hurt_entity",
+      "conditions": {
+        "entity": {
+          "type": "spore:leaper"
+        }
+      }
+    },
+    "hurt_by_infected": {
+      "trigger": "minecraft:entity_hurt_player",
+      "conditions": {
+        "damage": {
+          "source_entity": {
+            "type": "spore:leaper"
+          }
+        }
+      }
+    }
+  },
+  "requirements": [
+    [
+      "hurt_infected",
+      "hurt_by_infected"
+    ]
+  ]
+}

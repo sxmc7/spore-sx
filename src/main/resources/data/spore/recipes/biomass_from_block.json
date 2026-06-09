@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    {
+      "tag": "spore:biomass"
+    }
+  ],
+  "result": {
+    "count": 4,
+    "item": "spore:biomass"
+  }
+}

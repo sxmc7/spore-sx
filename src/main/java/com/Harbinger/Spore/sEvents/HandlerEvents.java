@@ -1,0 +1,1159 @@
+package com.Harbinger.Spore.sEvents;
+
+import com.Harbinger.Spore.Core.*;
+import com.Harbinger.Spore.Damage.SdamageTypes;
+import com.Harbinger.Spore.ExtremelySusThings.*;
+import com.Harbinger.Spore.ExtremelySusThings.CustomJsonReader.SporeConversionData;
+import com.Harbinger.Spore.ExtremelySusThings.CustomJsonReader.SporeConversionReloadListener;
+import com.Harbinger.Spore.ExtremelySusThings.CustomJsonReader.SporeMobConversionData;
+import com.Harbinger.Spore.ExtremelySusThings.CustomJsonReader.SporeMobConversionReloadListener;
+import com.Harbinger.Spore.ExtremelySusThings.Package.SongInitializingPacket;
+import com.Harbinger.Spore.SBlockEntities.CDUBlockEntity;
+import com.Harbinger.Spore.SBlockEntities.LivingStructureBlocks;
+import com.Harbinger.Spore.Senchantments.ExtremeFrostEnchantment;
+import com.Harbinger.Spore.Sentities.ArmorPersentageBypass;
+import com.Harbinger.Spore.Sentities.BaseEntities.*;
+import com.Harbinger.Spore.Sentities.BasicInfected.InfectedDrowned;
+import com.Harbinger.Spore.Sentities.Calamities.Gazenbrecher;
+import com.Harbinger.Spore.Sentities.Calamities.Hinderburg;
+import com.Harbinger.Spore.Sentities.Calamities.Hohlfresser;
+import com.Harbinger.Spore.Sentities.Calamities.Sieger;
+import com.Harbinger.Spore.Sentities.ChunkLoaderMob;
+import com.Harbinger.Spore.Sentities.EvolvedInfected.Naiad;
+import com.Harbinger.Spore.Sentities.EvolvedInfected.Protector;
+import com.Harbinger.Spore.Sentities.EvolvedInfected.Scamper;
+import com.Harbinger.Spore.Sentities.HitboxesForParts;
+import com.Harbinger.Spore.Sentities.Organoids.*;
+import com.Harbinger.Spore.Sentities.Projectile.*;
+import com.Harbinger.Spore.Sentities.Utility.*;
+import com.Harbinger.Spore.Sitems.BaseWeapons.*;
+import com.Harbinger.Spore.Sitems.Guns.AbstractSporeGun;
+import com.Harbinger.Spore.Sitems.PCI;
+import com.Harbinger.Spore.Sitems.SporeHorseArmor;
+import com.Harbinger.Spore.Spore;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.PlayerList;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.EntityTypeTags;
+import net.minecraft.tags.TagKey;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.ai.goal.AvoidEntityGoal;
+import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.animal.horse.AbstractHorse;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.Snowball;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraftforge.common.util.FakePlayerFactory;
+import net.minecraftforge.event.AddReloadListenerEvent;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.*;
+import net.minecraftforge.event.entity.EntityEvent;
+import net.minecraftforge.event.entity.living.*;
+import net.minecraftforge.event.entity.player.AttackEntityEvent;
+import net.minecraftforge.event.entity.player.ItemFishedEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.entity.player.PlayerSleepInBedEvent;
+import net.minecraftforge.event.level.LevelEvent;
+import net.minecraftforge.eventbus.api.Event;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
+
+import java.util.*;
+
+@Mod.EventBusSubscriber(modid = Spore.MODID)
+public class HandlerEvents {
+    private static int tickCounter = 0;
+    private static final int CHECK_INTERVAL = 1200; // 60 seconds
+    private static int val;
+    /** 追伤系统：UUID → [总伤害, 剩余tick数]，每tick扣除 总伤害/总tick数 */
+    private static final Map<UUID, float[]> CHASE_DAMAGE = new HashMap<>();
+    @SubscribeEvent
+    public static void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) {
+            ChunkLoaderHelper.tick();
+            // 追伤系统 — 在 Phase.END 执行（亚波伦自愈之后），破限伤
+            MinecraftServer srv = event.getServer();
+            if (srv != null) {
+                for (ServerLevel level : srv.getAllLevels()) {
+                    for (var entity : level.getEntities().getAll()) {
+                        if (!(entity instanceof LivingEntity living) || !living.isAlive()) continue;
+                        var data = living.getPersistentData();
+                        if (data.contains("spore_hp_keeper_ticks")) {
+                            int remaining = data.getInt("spore_hp_keeper_ticks");
+                            if (remaining > 0) {
+                                float perTick = data.getFloat("spore_hp_keeper");
+                                if (perTick > 0) {
+                                    com.Harbinger.Spore.util.UnsafeHealthHelper.addHealth(living, -perTick);
+                                }
+                                data.putInt("spore_hp_keeper_ticks", remaining - 1);
+                            } else {
+                                data.remove("spore_hp_keeper");
+                                data.remove("spore_hp_keeper_ticks");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (event.phase != TickEvent.Phase.END) return;
+        tickCounter++;
+        if (tickCounter >= CHECK_INTERVAL) {
+            MinecraftServer server = event.getServer();
+            if (server != null) {
+                for (ServerLevel level : server.getAllLevels()) {
+                    cleanUpMobs(level);
+                }
+            }
+            tickCounter = 0;
+        }
+        int i = 20 * 60 * SConfig.SERVER.time_song_trigger.get();
+        val++;
+        if (val % i == 0){
+            if (!SConfig.SERVER.ambient_song.get() || SConfig.SERVER.disable_system.get()){
+                val = 0;
+                return;
+            }
+            PlayerList players = event.getServer().getPlayerList();
+            if (players.getPlayers().isEmpty()){
+                return;
+            }else {
+                for (Player player : players.getPlayers()){
+                    if (player instanceof ServerPlayer serverPlayer){
+                        boolean postProto = !SporeSavedData.getHiveminds().isEmpty();
+                        SporePacketHandler.sendToClient(new SongInitializingPacket(-1,false,postProto),serverPlayer);
+                    }
+                }
+            }
+            val = 0;
+        }
+    }
+
+    private static void cleanUpMobs(ServerLevel level) {
+        List<Infected> infected = new ArrayList<>();
+        List<Projectile> projectileExcess = new ArrayList<>();
+        List<EvolvedInfected> evolved = new ArrayList<>();
+        List<Hyper> hyper = new ArrayList<>();
+        List<Organoid> organoid = new ArrayList<>();
+        List<ScentEntity> scent = new ArrayList<>();
+
+        for (Entity entity : level.getAllEntities()) {
+            if (!SConfig.SERVER.despawn_blacklist.get().contains(entity.getEncodeId()) &&
+                    !entity.hasCustomName()) {
+
+                if (entity instanceof Organoid o) organoid.add(o);
+                else if (entity instanceof EvolvedInfected e) evolved.add(e);
+                else if (entity instanceof Hyper h) hyper.add(h);
+                else if (entity instanceof ScentEntity s) scent.add(s);
+                else if (entity instanceof Infected i) infected.add(i);
+                else if (entity instanceof AcidBall i) projectileExcess.add(i);
+                else if (entity instanceof BileProjectile i) projectileExcess.add(i);
+                else if (entity instanceof StingerProjectile i) projectileExcess.add(i);
+                else if (entity instanceof Vomit i) projectileExcess.add(i);
+                else if (entity instanceof FleshBomb i) projectileExcess.add(i);
+                else if (entity instanceof VomitUsurperBall i) projectileExcess.add(i);
+
+            }
+        }
+
+        despawnExcess(level, infected, SConfig.SERVER.max_infected_cap.get());
+        despawnExcess(level, evolved, SConfig.SERVER.max_evolved_cap.get());
+        despawnExcess(level, hyper, SConfig.SERVER.max_hyper_cap.get());
+        despawnExcess(level, organoid, SConfig.SERVER.max_organoid_cap.get());
+        despawnExcess(level, scent, SConfig.SERVER.max_scent_cap.get());
+        despawnExcess(level, projectileExcess, 100);
+    }
+
+    private static <T extends Entity> void despawnExcess(ServerLevel level, List<T> entities, int cap) {
+        if (entities.size() <= cap) return;
+        int toRemove = entities.size() - cap;
+        int despawns = 0;
+        List<ServerPlayer> players = level.getPlayers(p -> true);
+
+        if (players.isEmpty()) {
+            for (int i = 0; i < toRemove; i++) {
+                T entity = entities.get(i);
+                entity.discard();
+                despawns++;
+            }
+        } else {
+            entities.sort(Comparator.comparingDouble((Entity e) ->
+                    level.getNearestPlayer(e, -1) != null ? e.distanceToSqr(Objects.requireNonNull(level.getNearestPlayer(e, -1))) : Double.MAX_VALUE).reversed());
+            for (int i = 0; i < toRemove; i++) {
+                T entity = entities.get(i);
+                entity.discard();
+                despawns++;
+            }
+        }
+        System.out.println("Despawned " + despawns + " mobs in level: " + level.dimension().location());
+    }
+    @SubscribeEvent
+    public static void onWorldLoad(LevelEvent.Load event) {
+        if (event.getLevel() instanceof ServerLevel level) {
+            SporeSavedData data = SporeSavedData.get(level);
+            for (ChunkLoadRequest request : data.getRequests()) {
+                ChunkLoaderHelper.ACTIVE_REQUESTS.put(request.getRequestID(), request);
+                for (ChunkPos pos : request.getChunkPositionsToLoad()) {
+                    ChunkLoaderHelper.forceChunk(level, pos);
+                }
+            }
+        }
+    }
+    @SubscribeEvent
+    public static void onLivingSpawned(EntityJoinLevelEvent event) {
+        if (event != null && event.getEntity() != null) {
+            if (event.getEntity() instanceof Protector protector){
+                SporeSavedData.addProtector(protector);
+            }
+            if (event.getEntity() instanceof Proto proto && event.getLevel() instanceof ServerLevel){
+                SporeSavedData.addProto(proto);
+            }
+            if (event.getEntity() instanceof PathfinderMob mob){
+
+            for (String string : SConfig.SERVER.attack.get()){
+                if (string.endsWith(":")){
+                    String[] mod = string.split(":");
+                    String[] iterations = mob.getEncodeId().split(":");
+                    if (Objects.equals(mod[0], iterations[0])){
+                        mob.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(mob, Infected.class, false));
+                        mob.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(mob, Calamity.class, false));
+                        mob.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(mob, Organoid.class, false));
+                    }
+                }else{
+                    if (SConfig.SERVER.attack.get().contains(mob.getEncodeId())){
+                        mob.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(mob, Infected.class, false));
+                        mob.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(mob, Calamity.class, false));
+                        mob.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(mob, Organoid.class, false));
+                    }
+                }
+            }
+            for (String string : SConfig.SERVER.flee.get()){
+                    if (string.endsWith(":")){
+                        String[] mod = string.split(":");
+                        String[] iterations = mob.getEncodeId().split(":");
+                        if (Objects.equals(mod[0], iterations[0])){
+                            mob.goalSelector.addGoal(4, new AvoidEntityGoal<>(mob, Infected.class, 6.0F, 1.0D, 0.9D));
+                            mob.goalSelector.addGoal(4, new AvoidEntityGoal<>(mob, UtilityEntity.class, 8.0F, 1.0D, 0.9D));
+                        }
+                    }else{
+                        if (SConfig.SERVER.flee.get().contains(mob.getEncodeId())){
+                            mob.goalSelector.addGoal(4, new AvoidEntityGoal<>(mob, Infected.class, 6.0F, 1.0D, 0.9D));
+                            mob.goalSelector.addGoal(4, new AvoidEntityGoal<>(mob, UtilityEntity.class, 8.0F, 1.0D, 0.9D));
+
+                        }
+                    }
+            }
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void Command(RegisterCommandsEvent event){
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":set_area")
+        .executes(arguments -> {
+            ServerLevel world = arguments.getSource().getLevel();
+            int x = (int) arguments.getSource().getPosition().x();
+            int y = (int) arguments.getSource().getPosition().y();
+            int z = (int) arguments.getSource().getPosition().z();
+            Entity entity = arguments.getSource().getEntity();
+            if (entity == null)
+                entity = FakePlayerFactory.getMinecraft(world);
+             if (entity != null){
+                 BlockPos pos = new BlockPos(x ,y,z);
+                 AABB hitbox = entity.getBoundingBox().inflate(20);
+                 List<Entity> entities = entity.level().getEntities(entity, hitbox);
+                 for (Entity entity1 : entities) {
+                     if(entity1 instanceof Infected infected) {
+                         infected.setSearchPos(pos);
+                     }else if (entity1 instanceof Calamity calamity){
+                         calamity.setSearchArea(pos);
+                     }
+                 }
+             }
+            return 1;
+        }).requires(s -> s.hasPermission(1)));
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":nuke_the_land")
+                .executes(arguments -> {
+                    ServerLevel world = arguments.getSource().getLevel();
+                    int x = (int) arguments.getSource().getPosition().x();
+                    int y = (int) arguments.getSource().getPosition().y();
+                    int z = (int) arguments.getSource().getPosition().z();
+                    NukeEntity nukeEntity = new NukeEntity(Sentities.NUKE.get(), world);
+                    nukeEntity.setInitRange(1f);
+                    nukeEntity.setRange((float) (SConfig.SERVER.nuke_range.get()*1f));
+                    nukeEntity.setInitDuration(0);
+                    nukeEntity.setDuration(SConfig.SERVER.nuke_time.get());
+                    nukeEntity.setDamage((float) (SConfig.SERVER.nuke_damage.get()*1f));
+                    nukeEntity.setPos(x,y,z);
+                    world.addFreshEntity(nukeEntity);
+                    return 1;
+                }).requires(s -> s.hasPermission(1)));
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":corpse")
+                .executes(arguments -> {
+                    ServerLevel world = arguments.getSource().getLevel();
+                    RandomSource randomSource = RandomSource.create();
+                    int x = (int) arguments.getSource().getPosition().x();
+                    int y = (int) arguments.getSource().getPosition().y();
+                    int z = (int) arguments.getSource().getPosition().z();
+                    CorpseEntity corpseEntity = new CorpseEntity(Sentities.CORPSE_PIECE.get(), world);
+                    corpseEntity.setCorpseType(randomSource.nextInt(HitboxesForParts.values().length));
+                    corpseEntity.setOwnerAda(true);
+                    corpseEntity.setPos(x,y,z);
+                    world.addFreshEntity(corpseEntity);
+                    return 1;
+                }).requires(s -> s.hasPermission(1)));
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":erase_the_fungus")
+                .executes(arguments -> {
+                    ServerLevel serverLevel = arguments.getSource().getLevel();
+                    for (Entity entity : serverLevel.getAllEntities()){
+                        if (entity instanceof LivingEntity living){
+                            if (living instanceof Infected || living instanceof UtilityEntity){
+                                living.discard();
+                            }
+                        }
+                    }
+                    return 1;
+                }).requires(s -> s.hasPermission(1)));
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":feed")
+                .executes(arguments -> {
+                    ServerLevel world = arguments.getSource().getLevel();
+                    Entity entity = arguments.getSource().getEntity();
+                    if (entity == null)
+                        entity = FakePlayerFactory.getMinecraft(world);
+                    if (entity != null){
+                        AABB hitbox = entity.getBoundingBox().inflate(20);
+                        List<Entity> entities = entity.level().getEntities(entity, hitbox);
+                        for (Entity entity1 : entities) {
+                            if(entity1 instanceof Infected infected) {
+                                infected.setKills(infected.getKills()+1);
+                                infected.setEvoPoints(infected.getEvoPoints()+1);
+                            }else if (entity1 instanceof Calamity calamity){
+                                calamity.setKills(calamity.getKills()+1);
+                            }
+                        }
+                    }
+                    return 1;
+                }).requires(s -> s.hasPermission(1)));
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":evolve")
+                .executes(arguments -> {
+                    ServerLevel world = arguments.getSource().getLevel();
+                    Entity entity = arguments.getSource().getEntity();
+                    if (entity == null)
+                        entity = FakePlayerFactory.getMinecraft(world);
+                    if (entity != null){
+                        AABB hitbox = entity.getBoundingBox().inflate(20);
+                        List<Entity> entities = entity.level().getEntities(entity, hitbox);
+                        for (Entity entity1 : entities) {
+                            if(entity1 instanceof Infected infected) {
+                                infected.setEvolution(SConfig.SERVER.evolution_age_human.get());
+                                if (entity1 instanceof Scamper scamper){
+                                    scamper.setAge(SConfig.SERVER.scamper_age.get());
+                                }else if (infected instanceof EvolvedInfected evolvedInfected){
+                                    evolvedInfected.setEvoPoints(SConfig.SERVER.min_kills_hyper.get());
+                                }else
+                                infected.setEvoPoints(SConfig.SERVER.min_kills.get());
+                            }else if (entity1 instanceof Mound mound){
+                                mound.setAge(mound.getAge()+1);
+                            }else if (entity1 instanceof Calamity calamity){
+                                calamity.ActivateAdaptation();
+                            }
+                        }
+                    }
+                    return 1;
+                }).requires(s -> s.hasPermission(1)));
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":get_data")
+                .executes(arguments -> {
+                    ServerLevel world = arguments.getSource().getLevel();
+                    Entity entity = arguments.getSource().getEntity();
+                    if (entity instanceof Player player){
+                        SporeSavedData data = SporeSavedData.getDataLocation(world);
+                        int numberofprotos = data.getAmountOfHiveminds();
+                        player.displayClientMessage(Component.literal("........................................"),false);
+                        player.displayClientMessage(Component.literal("There are "+numberofprotos + " proto hiveminds in this dimension"),false);
+                        for (ChunkLoadRequest request : data.getRequests()){
+                            String id = request.getRequestID();
+                            long getDefaultTicks = request.getTickAmount();
+                            long ticks = request.getTicksUntilExpiration();
+                            player.displayClientMessage(Component.literal("Loaded chunk "+id + " "+ticks +"/"+getDefaultTicks),false);
+                        }
+                    }
+                    return 1;
+                }).requires(s -> s.hasPermission(1)));
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":check_entity")
+                .executes(arguments -> {
+                    ServerLevel world = arguments.getSource().getLevel();
+                    Entity entity = arguments.getSource().getEntity();
+                    if (entity == null)
+                        entity = FakePlayerFactory.getMinecraft(world);
+                    if (entity instanceof Player player && !player.level().isClientSide){
+                        AABB hitbox = entity.getBoundingBox().inflate(5);
+                        List<Entity> entities = entity.level().getEntities(entity, hitbox);
+                        for (Entity entity1 : entities) {
+                            if (entity1 instanceof CorpseEntity corpseEntity){
+                                player.displayClientMessage(Component.literal("isAdapted ? " + corpseEntity.getOwnerAda()),false);
+                                player.displayClientMessage(Component.literal("ID ? " + corpseEntity.getCorpseType()),false);
+                                player.displayClientMessage(Component.literal("Timer ? " + corpseEntity.getTimer()),false);
+                                for (int i=0;i<corpseEntity.getInventory().getContainerSize();i++){
+                                    ItemStack stack = corpseEntity.getInventory().getItem(i);
+                                    if (stack != ItemStack.EMPTY){
+                                        player.displayClientMessage(Component.literal("ID ? " + stack.getItem().asItem().getDescription()),false);
+                                    }
+                                }
+                            }
+                            if(entity1 instanceof Infected infected) {
+                                player.displayClientMessage(Component.literal("Entity "+ infected.getEncodeId() + " " + infected.getCustomName()),false);
+                                player.displayClientMessage(Component.literal("Current Health " + infected.getHealth() + "/" + infected.getMaxHealth()),false);
+                                player.displayClientMessage(Component.literal("Kills " + infected.getKills()),false);
+                                player.displayClientMessage(Component.literal("Evolution Points " + infected.getEvoPoints()),false);
+                                player.displayClientMessage(Component.literal("Position to be Searched " + infected.getSearchPos()),false);
+                                player.displayClientMessage(Component.literal("Buffs " + infected.getActiveEffects()),false);
+                                player.displayClientMessage(Component.literal("Seconds until evolution: " + infected.getEvolutionCoolDown() + "/" + SConfig.SERVER.evolution_age_human.get()),false);
+                                player.displayClientMessage(Component.literal("Seconds until starvation: " + infected.getHunger() + "/" + (SConfig.SERVER.hunger.get())),false);
+                                player.displayClientMessage(Component.literal("Is Linked ? " + infected.getLinked()),false);
+                                player.displayClientMessage(Component.literal("Target ? " + infected.getTarget()),false);
+                                player.displayClientMessage(Component.literal("Partner ? " + infected.getFollowPartner()),false);
+                                if (infected instanceof Scamper scamper){
+                                    player.displayClientMessage(Component.literal("Time before overtake ? " + scamper.getAge()+"/"+SConfig.SERVER.scamper_age.get()),false);
+                                }
+                                if (infected instanceof Hyper scamper){
+                                    player.displayClientMessage(Component.literal("get nest location ? " + scamper.getNestLocation()),false);
+                                }
+                                if (infected instanceof Naiad scamper){
+                                    player.displayClientMessage(Component.literal("get nest location ? " + scamper.getTerritory()),false);
+                                }
+                                if (infected instanceof GastGeber geber){
+                                        player.displayClientMessage(Component.literal("RootTimer ? " + geber.getTimeRooted()),false);
+                                        player.displayClientMessage(Component.literal("Aggression ? " + geber.getAggression()),false);
+                                        player.displayClientMessage(Component.literal("Spread ? " + geber.getSpreadInterval()),false);
+                                }
+                                player.displayClientMessage(Component.literal("-------------------------"),false);
+
+                            }else if (entity1 instanceof Calamity calamity){
+                                    player.displayClientMessage(Component.literal("Entity "+ calamity.getEncodeId() + " " + calamity.getCustomName()),false);
+                                    player.displayClientMessage(Component.literal("Current Health " + calamity.getHealth() + "/" + calamity.getMaxHealth()),false);
+                                    player.displayClientMessage(Component.literal("Kills " + calamity.getKills()),false);
+                                    player.displayClientMessage(Component.literal("Position to be Searched " + calamity.getSearchArea()),false);
+                                    player.displayClientMessage(Component.literal("Buffs " + calamity.getActiveEffects()),false);
+                                    player.displayClientMessage(Component.literal("Target ? " + calamity.getTarget()),false);
+                                    player.displayClientMessage(Component.literal("Mutation Color ? " + calamity.getMutationColor()),false);
+                                    if (calamity instanceof Sieger sieger){
+                                        player.displayClientMessage(Component.literal("Tail health "+ sieger.getTailHp()+"/"+sieger.getMaxTailHp()),false);
+                                    }
+                                    if (calamity instanceof Gazenbrecher sieger){
+                                        player.displayClientMessage(Component.literal("Tongue health "+ sieger.getTongueHp()+"/"+sieger.getMaxTongueHp()),false);
+                                        player.displayClientMessage(Component.literal("Is adapted to fire "+ sieger.isAdaptedToFire() + " fire points" + sieger.getAdaptationCount()),false);
+                                    }
+                                    if (calamity instanceof Hinderburg sieger){
+                                        player.displayClientMessage(Component.literal("Is armed "+ sieger.isArmed()),false);
+                                    }
+                                if (calamity instanceof Hohlfresser sieger){
+                                    player.displayClientMessage(Component.literal("Underground "+ sieger.isUnderground()),false);
+                                    player.displayClientMessage(Component.literal("Ores ? "+ sieger.getOres()),false);
+                                }
+                                    player.displayClientMessage(Component.literal("-------------------------"),false);
+                            }else if (entity1 instanceof Mound mound){
+                                    player.displayClientMessage(Component.literal("Entity "+ mound.getEncodeId() + " " + mound.getCustomName()),false);
+                                    player.displayClientMessage(Component.literal("Current Health " + mound.getHealth() + "/" + mound.getMaxHealth()),false);
+                                    player.displayClientMessage(Component.literal("Is Linked ? " + mound.getLinked()),false);
+                                    player.displayClientMessage(Component.literal("Age " + mound.getAge()),false);
+                                    player.displayClientMessage(Component.literal("Seconds until growth " + mound.getAgeCounter() + "/" + SConfig.SERVER.mound_age.get()),false);
+                                    player.displayClientMessage(Component.literal("Seconds until puff " + mound.getCounter() + "/" + mound.getMaxCounter()),false);
+                                    player.displayClientMessage(Component.literal("Buffs " + mound.getActiveEffects()),false);
+                                    player.displayClientMessage(Component.literal("-------------------------"),false);
+
+                            }else if(entity1 instanceof Proto proto) {
+                                    player.displayClientMessage(Component.literal("Entity "+ proto.getEncodeId() + " " + proto.getCustomName()),false);
+                                    player.displayClientMessage(Component.literal("Current Health " + proto.getHealth() + "/" + proto.getMaxHealth()),false);
+                                    player.displayClientMessage(Component.literal("Current Target " + proto.getTarget()),false);
+                                    player.displayClientMessage(Component.literal("Buffs " + proto.getActiveEffects()),false);
+                                    player.displayClientMessage(Component.literal("Mobs under control " + proto.getHosts()),false);
+                                    player.displayClientMessage(Component.literal("Biomass " + proto.getBiomass()),false);
+                                    for (int i = 0;i<proto.getWeights().length;i++){
+                                        player.displayClientMessage(Component.literal("Neuron_"+i+" " + proto.getWeightsValue(i)),false);
+                                    }
+                                    for (String s : proto.team_1){
+                                    player.displayClientMessage(Component.literal("TEAM_1 "+ s),false);
+                                    }
+                                    for (String s : proto.team_2){
+                                    player.displayClientMessage(Component.literal("TEAM_2 "+ s),false);
+                                    }
+                                    for (String s : proto.team_3){
+                                    player.displayClientMessage(Component.literal("TEAM_3 "+ s),false);
+                                    }
+                                    for (String s : proto.team_4){
+                                    player.displayClientMessage(Component.literal("TEAM_4 "+ s),false);
+                                    }
+                                    for (String s : proto.team_5){
+                                    player.displayClientMessage(Component.literal("Beloved mobs "+ s),false);
+                                    }
+                                    player.displayClientMessage(Component.literal("-------------------------"),false);
+                            }
+                            else if(entity1 instanceof Womb reformator) {
+                                    player.displayClientMessage(Component.literal("Entity "+ reformator.getEncodeId() + " " + reformator.getCustomName()),false);
+                                    player.displayClientMessage(Component.literal("Current Health " + reformator.getHealth()),false);
+                                    player.displayClientMessage(Component.literal("Stored Location " + reformator.getLocation()),false);
+                                    player.displayClientMessage(Component.literal("Buffs " + reformator.getActiveEffects()),false);
+                                    player.displayClientMessage(Component.literal("Biomass " + reformator.getBiomass()),false);
+                                    player.displayClientMessage(Component.literal("State " + reformator.getVariant().getValue()),false);
+                                    for (String s : reformator.getAttributeIDs()){
+                                        player.displayClientMessage(Component.translatable(s),false);
+                                    }
+                                    player.displayClientMessage(Component.literal("-------------------------"),false);
+                            }else if(entity1 instanceof Vigil vigil) {
+                                    player.displayClientMessage(Component.literal("Entity "+ vigil.getEncodeId() + " " + vigil.getCustomName()),false);
+                                    player.displayClientMessage(Component.literal("Current Health " + vigil.getHealth()),false);
+                                    player.displayClientMessage(Component.literal("Buffs " + vigil.getActiveEffects()),false);
+                                    player.displayClientMessage(Component.literal("State " + vigil.getTrigger()),false);
+                                    player.displayClientMessage(Component.literal("Horde size " + vigil.getWaveSize()),false);
+                                    player.displayClientMessage(Component.literal("Time until it leaves " + vigil.getTimer()+"/6000"),false);
+                                    player.displayClientMessage(Component.literal("-------------------------"),false);
+
+                            }else if(entity1 instanceof Umarmer umarmer) {
+                                    player.displayClientMessage(Component.literal("Entity "+ umarmer.getEncodeId() + " " + umarmer.getCustomName()),false);
+                                    player.displayClientMessage(Component.literal("Current Health " + umarmer.getHealth()),false);
+                                    player.displayClientMessage(Component.literal("Buffs " + umarmer.getActiveEffects()),false);
+                                    player.displayClientMessage(Component.literal("Shielded? " + umarmer.isShielding()),false);
+                                    player.displayClientMessage(Component.literal("Pins? " + umarmer.isPinned()),false);
+                                    player.displayClientMessage(Component.literal("Time until it leaves " + umarmer.getTimer()+"/2400"),false);
+                                    player.displayClientMessage(Component.literal("-------------------------"),false);
+                            }else if(entity1 instanceof Brauerei brauerei) {
+                                    player.displayClientMessage(Component.literal("Entity "+ brauerei.getEncodeId() + " " + brauerei.getCustomName()),false);
+                                    player.displayClientMessage(Component.literal("Current Health " + brauerei.getHealth()),false);
+                                    player.displayClientMessage(Component.literal("Buffs " + brauerei.getActiveEffects()),false);
+                                    player.displayClientMessage(Component.literal("Time until it leaves " + brauerei.getTimer()+"/300"),false);
+                                    player.displayClientMessage(Component.literal("-------------------------"),false);
+                            }
+                            else if(entity1 instanceof Delusionare delusionare) {
+                                    player.displayClientMessage(Component.literal("Entity "+ delusionare.getEncodeId() + " " + delusionare.getCustomName()),false);
+                                    player.displayClientMessage(Component.literal("Current Health " + delusionare.getHealth()),false);
+                                    player.displayClientMessage(Component.literal("Buffs " + delusionare.getActiveEffects()),false);
+                                    player.displayClientMessage(Component.literal("Target ? " + delusionare.getTarget()),false);
+                                    player.displayClientMessage(Component.literal("Magic state " + delusionare.getSpellById() + " casting "+delusionare.isCasting()),false);
+                                    player.displayClientMessage(Component.literal("-------------------------"),false);
+                            }else if(entity1 instanceof Specter specter) {
+                                player.displayClientMessage(Component.literal("Entity "+ specter.getEncodeId() + " " + specter.getCustomName()),false);
+                                player.displayClientMessage(Component.literal("Current Health " + specter.getHealth()),false);
+                                player.displayClientMessage(Component.literal("Buffs " + specter.getActiveEffects()),false);
+                                player.displayClientMessage(Component.literal("Target ? " + specter.getTarget()),false);
+                                player.displayClientMessage(Component.literal("Target Pos " + specter.getTargetPos()),false);
+                                player.displayClientMessage(Component.literal("Stomach " + specter.getStomach()),false);
+                                player.displayClientMessage(Component.literal("Biomass " + specter.getBiomass()),false);
+                                player.displayClientMessage(Component.literal("-------------------------"),false);
+                            }else if(entity1 instanceof InfestedConstruct construct) {
+                                player.displayClientMessage(Component.literal("Entity "+ construct.getEncodeId() + " " + construct.getCustomName()),false);
+                                player.displayClientMessage(Component.literal("Current Health " + construct.getHealth()),false);
+                                player.displayClientMessage(Component.literal("Buffs " + construct.getActiveEffects()),false);
+                                player.displayClientMessage(Component.literal("Target ? " + construct.getTarget()),false);
+                                player.displayClientMessage(Component.literal("Machine hp " + construct.getMachineHealth()),false);
+                                player.displayClientMessage(Component.literal("Metal " + construct.getMetalReserve()),false);
+                                player.displayClientMessage(Component.literal("-------------------------"),false);
+                            }
+                        }
+                    }
+                    return 1;
+                }).requires(s -> s.hasPermission(1)));
+
+        event.getDispatcher().register(Commands.literal(Spore.MODID+":check_block_entity")
+                .executes(arguments -> {
+                    ServerLevel world = arguments.getSource().getLevel();
+                    Entity entity = arguments.getSource().getEntity();
+                    if (entity == null)
+                        entity = FakePlayerFactory.getMinecraft(world);
+                    if (entity != null) {
+                        AABB aabb = entity.getBoundingBox().inflate(5);
+                        for(BlockPos blockpos : BlockPos.betweenClosed(Mth.floor(aabb.minX), Mth.floor(aabb.minY), Mth.floor(aabb.minZ), Mth.floor(aabb.maxX), Mth.floor(aabb.maxY), Mth.floor(aabb.maxZ))) {
+                            BlockEntity blockEntity = entity.level().getBlockEntity(blockpos);
+                            if (entity instanceof Player player && !player.level().isClientSide) {
+                                if (blockEntity instanceof LivingStructureBlocks structureBlocks){
+                                    player.displayClientMessage(Component.literal("Structure block with " + structureBlocks.getKills() + " kills"), false);
+                                }else if (blockEntity instanceof CDUBlockEntity block){
+                                    player.displayClientMessage(Component.literal("Fuel " + block.fuel), false);
+                                }
+                            }
+
+                        }
+                        }
+                    return 1;
+                }).requires(s -> s.hasPermission(1)));
+
+    }
+
+    @SubscribeEvent
+    public static void SpawnPlacement(SpawnPlacementRegisterEvent event){
+        for (RegistryObject<EntityType<?>> type : Sentities.SPORE_ENTITIES.getEntries()){
+            EntityType<?> entityType = type.get();
+            if (blacklist().contains(entityType)){continue;}
+            try {
+                event.register((EntityType<Infected>) entityType, SpawnPlacements.Type.ON_GROUND, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,Infected::checkMonsterInfectedRules, SpawnPlacementRegisterEvent.Operation.AND);
+            } catch (Exception e) {
+                ResourceLocation id = ForgeRegistries.ENTITY_TYPES.getKey(entityType);
+                Spore.LOGGER.warn("Could not apply custom placement {}: {}", id, e.getMessage());
+            }
+        }
+    }
+
+    private static List<EntityType<?>> blacklist(){
+        List<EntityType<?>> values = new ArrayList<>();
+        values.add(Sentities.PLAGUED.get());
+        values.add(Sentities.LACERATOR.get());
+        values.add(Sentities.BIOBLOOB.get());
+        values.add(Sentities.SAUGLING.get());
+        return values;
+    }
+
+
+    @SubscribeEvent
+    public static void Effects(TickEvent.PlayerTickEvent event){
+        if (event.player instanceof ServerPlayer player){
+            if (player.hasEffect(Seffects.CORROSION.get())){
+                if (player.tickCount % 60 == 0){
+                    player.getInventory().hurtArmor(SdamageTypes.acid(player),0.5f, Inventory.ALL_ARMOR_SLOTS);
+                }
+            }
+            if (player.hasEffect(Seffects.SYMBIOSIS.get())){
+                if (player.tickCount % 200 == 0){
+                    int size = player.getInventory().getContainerSize();
+                    for (int i = 0;i <= size;i++){
+                        ItemStack itemStack = player.getInventory().getItem(i);
+                        if (EnchantmentHelper.getTagEnchantmentLevel(Senchantments.SYMBIOTIC_RECONSTITUTION.get(),itemStack) != 0 && itemStack.isDamaged()){
+                            if (itemStack.getItem() instanceof SporeToolsBaseItem base){
+                                base.healTool(itemStack,2);
+                            }else if (itemStack.getItem() instanceof SporeArmorData base){
+                                base.healTool(itemStack,2);
+                            }else{
+                                int l = itemStack.getDamageValue()-2;
+                                itemStack.setDamageValue(l);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+    @SubscribeEvent
+    public static void drops(LootingLevelEvent event){
+        if (event.getDamageSource() == null){
+            return;
+        }
+        Entity entity = event.getDamageSource().getDirectEntity();
+        if (entity instanceof LivingEntity living){
+            if (living.getMainHandItem().getItem() instanceof LootModifierWeapon lootModifierWeapon){
+                event.setLootingLevel(lootModifierWeapon.getLootingLevel());
+            }
+        }
+    }
+    @SubscribeEvent
+    public static void FishingAnInfectedDrowned(ItemFishedEvent event){
+        if (event != null){
+            if (Math.random() < 0.05 && event.getHookEntity().isOpenWaterFishing()){
+                InfectedDrowned infectedDrowned = new InfectedDrowned(Sentities.INF_DROWNED.get(),event.getEntity().level());
+                infectedDrowned.moveTo(event.getHookEntity().getX(),event.getHookEntity().getY(),event.getHookEntity().getZ());
+                infectedDrowned.setKills(1);
+                infectedDrowned.setTarget(event.getEntity());
+                event.getEntity().level().addFreshEntity(infectedDrowned);
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void ExplosiveBite(LivingEntityUseItemEvent.Finish event){
+        if (event != null && !event.getEntity().level().isClientSide){
+            Item item = event.getItem().getItem();
+            if (item == Sitems.ROASTED_TUMOR.get() && Math.random() < 0.2){
+                LivingEntity entity = event.getEntity();
+                entity.level().explode(null,entity.getX(),entity.getY(),entity.getZ(),0.5f, Level.ExplosionInteraction.NONE);
+            }
+            if (item == Sitems.MILKY_SACK.get()){
+                LivingEntity entity = event.getEntity();
+                List<MobEffectInstance> effectsToRemove = new ArrayList<>();
+                entity.getActiveEffects().forEach(mobEffectInstance -> {
+                    if (!mobEffectInstance.getEffect().isBeneficial()) {
+                        effectsToRemove.add(mobEffectInstance);
+                    }
+                });
+                effectsToRemove.forEach(mobEffectInstance -> entity.removeEffect(mobEffectInstance.getEffect()));
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void LoadCalamity(EntityEvent.EnteringSection event){
+        Entity entity = event.getEntity();
+        if (entity instanceof ChunkLoaderMob mob && entity.level() instanceof ServerLevel serverLevel){
+            SectionPos OldChunk = event.getOldPos();
+            SectionPos NewChunk = event.getNewPos();
+            if (mob.shouldLoadChunk() && event.didChunkChange() && OldChunk != NewChunk){
+                ChunkPos chunk = NewChunk.chunk();
+                String id = mob.getChunkId() + chunk.toString();
+                ChunkLoadRequest request = new ChunkLoadRequest(
+                        serverLevel.dimension(),
+                        new ChunkPos[]{chunk},
+                        0,
+                        id,
+                        mob.chunkLifeTicks(),
+                        entity.getUUID()
+                );
+                ChunkLoaderHelper.addRequest(request);
+            }
+        }
+    }
+    @SubscribeEvent
+    public static void FallProt(LivingFallEvent event){
+        if (event.getEntity().getItemBySlot(EquipmentSlot.FEET).getItem() == Sitems.INF_UP_BOOTS.get()){
+            event.setDistance(event.getDistance()-25);
+        }
+    }
+    @SubscribeEvent
+    public static void ProtectFromEffect(MobEffectEvent.Applicable event)
+    {
+        LivingEntity living = event.getEntity();
+        MobEffectInstance instance = event.getEffectInstance();
+        MobEffect mobEffect = event.getEffectInstance().getEffect();
+        if (living != null){
+            if (mobEffect == Seffects.MYCELIUM.get() && Utilities.helmetList().contains(living.getItemBySlot(EquipmentSlot.HEAD).getItem())){
+                event.setResult(Event.Result.DENY);
+            }
+            if (SConfig.SERVER.faw_target.get() && event.getEntity().getType().is(TagKey.create(Registries.ENTITY_TYPE,
+                    new ResourceLocation("fromanotherworld:things")))){
+                if (mobEffect == Seffects.MARKER.get()){
+                    event.setResult(Event.Result.DENY);
+                }
+            }else if (SConfig.SERVER.skulk_target.get() && event.getEntity().getType().is(TagKey.create(Registries.ENTITY_TYPE,
+                    new ResourceLocation("sculkhorde:sculk_entity")))){
+                if (mobEffect == Seffects.MARKER.get()){
+                    event.setResult(Event.Result.DENY);
+                }
+            }
+            if (living.getItemBySlot(EquipmentSlot.HEAD).getItem() == Sitems.INF_UP_HELMET.get() && mobEffect == Seffects.MADNESS.get() && instance.getAmplifier() < 1){
+                event.setResult(Event.Result.DENY);
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void DiscardProto(EntityLeaveLevelEvent event){
+        if (event.getEntity() instanceof Protector protector){
+            SporeSavedData.removeProtector(protector);
+        }
+        if (event.getEntity() instanceof Proto proto && event.getLevel() instanceof ServerLevel){
+            SporeSavedData.removeProto(proto);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onProjectileImpact(ProjectileImpactEvent event) {
+        if (event.getProjectile() instanceof Snowball) {
+            if (event.getRayTraceResult().getType() == HitResult.Type.ENTITY) {
+                Entity entity = ((EntityHitResult) event.getRayTraceResult()).getEntity();
+                if (entity instanceof LivingEntity living) {
+                    if (living.canFreeze()) living.setTicksFrozen(living.getTicksFrozen() + 100);
+                }
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void NoSleep(PlayerSleepInBedEvent event){
+        if(event.getEntity() instanceof ServerPlayer player && player.hasEffect(Seffects.UNEASY.get())){
+            player.displayClientMessage(Component.translatable("uneasy.message"),true);
+            event.setResult(Player.BedSleepingProblem.OTHER_PROBLEM);
+        }
+    }
+    @SubscribeEvent
+    public static void DefenseBypass(LivingDamageEvent event) {
+        // 极寒盾牌免疫: 持有极寒盾牌的玩家举盾时免疫 Spore 生物伤害
+        if (event.getEntity() instanceof Player player && player.isBlocking()) {
+            if (ExtremeFrostEnchantment.hasExtremeFrostShield(player)) {
+                Entity source = event.getSource().getEntity();
+                if (source != null && source.getClass().getName().startsWith("com.Harbinger.Spore.Sentities")) {
+                    event.setAmount(0.0f);
+                    return;
+                }
+            }
+        }
+
+        Entity living = event.getSource().getEntity();
+        if (living instanceof Player player && event.getEntity().getItemBySlot(EquipmentSlot.CHEST).isEmpty()){
+            ItemStack weapon = player.getMainHandItem();
+            if (weapon.getItem() instanceof PCI pci && pci.getCharge(weapon)>0 && !player.getCooldowns().isOnCooldown(pci)){
+                int damageMod = SConfig.SERVER.pci_damage_multiplier.get();
+                int charge = pci.getCharge(weapon);
+                LivingEntity target = event.getEntity();
+                boolean freeze = event.getEntity().getType().is(EntityTypeTags.FREEZE_HURTS_EXTRA_TYPES);
+                float targetHealth = freeze ? target.getHealth()/damageMod : target.getHealth();
+                int freezeDamage = charge >= targetHealth ? (int) targetHealth : charge;
+                float newDamage = event.getAmount() + (freeze ? freezeDamage * damageMod : freezeDamage);
+                event.setAmount(newDamage);
+                pci.setCharge(weapon, charge - freezeDamage);
+                target.setTicksFrozen(Math.max(target.getTicksFrozen(), 600));
+                player.getCooldowns().addCooldown(pci, (int) Math.ceil(targetHealth / 5f) * 20);
+                pci.playSound(player);
+            }
+        }
+        if(event.getEntity() instanceof Infected victim && !(victim instanceof Protector)) {
+                LivingEntity attacker = living instanceof LivingEntity e ? e : null;
+                List<Protector> protectorList = SporeSavedData.protectorList();
+                if (!protectorList.isEmpty() && attacker != null){
+                    for (Protector protector1 : protectorList){
+                        double d0 = protector1.distanceTo(attacker);
+                        if (protector1.isAlive() && d0 < 64f && !attacker.isSpectator() && Utilities.TARGET_SELECTOR.Test(attacker)){
+                            protector1.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED,100,0));
+                            protector1.setTarget(attacker);
+                        }
+                    }
+                }
+        }
+        if (living instanceof ArmorPersentageBypass bypass){
+            float original_damage = event.getAmount();
+            float recalculatedDamage = bypass.amountOfDamage(original_damage);
+            if (recalculatedDamage >= 0 && original_damage < recalculatedDamage){
+                event.setAmount(recalculatedDamage);
+            }
+        }
+        if (living instanceof LivingEntity livingEntity && livingEntity.getMainHandItem().getItem() instanceof DamagePiercingModifier piercingModifier){
+            float original_damage = event.getAmount();
+            float recalculatedDamage = piercingModifier.getMinimalDamage(original_damage);
+            if (recalculatedDamage >= 0 && original_damage < recalculatedDamage){
+                event.setAmount(recalculatedDamage);
+            }
+        }
+        if (living instanceof Infected || living instanceof UtilityEntity && !(living instanceof Illusion)){
+            LivingEntity livingEntity = event.getEntity();
+            MobEffectInstance mobEffectInstance = livingEntity.getEffect(Seffects.MADNESS.get());
+            if (mobEffectInstance != null){
+                int level = mobEffectInstance.getAmplifier();
+                int duration = mobEffectInstance.getDuration() +1200;
+                boolean jumpLevel = duration < 12000;
+                livingEntity.addEffect(new MobEffectInstance(Seffects.MADNESS.get(),jumpLevel ? duration: duration-12000,jumpLevel ? level : level+1));
+            }
+        }
+        //////problem
+        if (event.getEntity() instanceof Player player) {
+            float totalDamageModification = 0.0F;
+
+            for (ItemStack stack : player.getArmorSlots()) {
+                if (stack.getItem() instanceof SporeBaseArmor armor) {
+                    totalDamageModification += armor.calculateAdditionalDamage(event.getSource(), stack, event.getAmount());
+                }
+            }
+            event.setAmount(event.getAmount() + totalDamageModification);
+        }
+        if (event.getSource().getEntity() instanceof ServerPlayer serverPlayer){
+            int i = 0;
+            for (ItemStack stack : serverPlayer.getInventory().armor){
+                if (stack.getItem() instanceof SporeBaseArmor baseArmor && baseArmor.getVariant(stack) == SporeArmorMutations.CHARRED){
+                    i=i+2;
+                }
+            }
+            if (i > 0){
+                event.getEntity().setSecondsOnFire(i);
+            }
+        }
+        if (event.getSource().getEntity() instanceof Mob attacker){
+            CompoundTag data = attacker.getPersistentData();
+            if (data.contains("hivemind")) {
+                int summonerUUID = data.getInt("hivemind");
+                Level level = attacker.level();
+                Entity summoner = level.getEntity(summonerUUID);
+
+                if (summoner instanceof Proto smartMob) {
+                    int decision = data.getInt("decision");
+                    int member = data.getInt("member");
+                    smartMob.praisedForDecision(decision,member);
+                }
+            }
+        }
+        if (event.getEntity() instanceof Mob creature){
+            CompoundTag data = creature.getPersistentData();
+            if (data.contains("hivemind")) {
+                int summonerUUID = data.getInt("hivemind");
+                Level level = creature.level();
+                Entity summoner = level.getEntity(summonerUUID);
+                if (summoner instanceof Proto smartMob) {
+                    int decision = data.getInt("decision");
+                    int member = data.getInt("member");
+                    smartMob.punishForDecision(decision,member);
+                }
+            }
+        }
+        // Spore武器百分比伤害：对非Spore生物造成百分比伤害（Spore生物由hurt()后门处理）
+        // 支持近战（melee）、弹射物（projectile/gun/bow/crossbow）
+        Entity directEntity = event.getSource().getDirectEntity();
+        LivingEntity weaponAttacker = null;
+        boolean isSporeWeapon = false;
+
+        if (directEntity instanceof LivingEntity le) {
+            // 近战攻击：检查主手和副手
+            weaponAttacker = le;
+            ItemStack mainHand = le.getMainHandItem();
+            ItemStack offHand = le.getOffhandItem();
+            isSporeWeapon = (!mainHand.isEmpty() && mainHand.getItem() instanceof SporeWeaponData)
+                         || (!offHand.isEmpty() && offHand.getItem() instanceof SporeWeaponData);
+        } else if (directEntity instanceof net.minecraft.world.entity.projectile.Projectile proj) {
+            if (directEntity instanceof com.Harbinger.Spore.Sentities.Projectile.AbstractGunProjectile) {
+                // Spore枪械弹射物：本身就是Spore武器子弹，无需检查手持物品
+                if (proj.getOwner() instanceof LivingEntity owner) {
+                    weaponAttacker = owner;
+                    isSporeWeapon = true;
+                }
+            } else if (proj.getOwner() instanceof LivingEntity owner) {
+                // 弓箭/其他弹射物：检查射手的武器（主手+副手）
+                weaponAttacker = owner;
+                ItemStack mainHand = owner.getMainHandItem();
+                ItemStack offHand = owner.getOffhandItem();
+                isSporeWeapon = (!mainHand.isEmpty() && mainHand.getItem() instanceof SporeWeaponData)
+                             || (!offHand.isEmpty() && offHand.getItem() instanceof SporeWeaponData);
+            }
+        }
+
+        // bypass 已移至 onSporeWeaponAttack(LivingAttackEvent) 统一处理
+        // 此处不再执行任何改血操作，避免与 LivingAttackEvent 双重触发
+    }
+
+    /**
+     * Spore武器攻击：提前清除目标无敌帧，确保完整伤害链触发
+     *
+     * LivingAttackEvent fires inside LivingEntity.hurt() BEFORE the invulnerableTime check.
+     * 如果不在此清除 invulnerableTime：
+     *   hurt() 因 invulnerableTime > 0 返回 false
+     *   → hurtEnemy() 不调用 → melee bypass 通道不执行
+     *   → LivingDamageEvent 不触发 → ranged bypass 通道也不执行
+     *
+     * 清除后完整链路恢复：hurt()→true→hurtEnemy()/LivingDamageEvent→bypass执行
+     */
+    @SubscribeEvent
+    public static void onSporeWeaponAttack(LivingAttackEvent event) {
+        DamageSource source = event.getSource();
+        LivingEntity target = event.getEntity();
+        if (target.level().isClientSide) return;
+        if (target instanceof Player p && p.isCreative()) return;
+
+        Entity directEntity = source.getDirectEntity();
+        boolean isSporeWeapon = false;
+
+        if (directEntity instanceof LivingEntity le) {
+            ItemStack mainHand = le.getMainHandItem();
+            ItemStack offHand = le.getOffhandItem();
+            isSporeWeapon = (!mainHand.isEmpty() && mainHand.getItem() instanceof SporeWeaponData)
+                         || (!offHand.isEmpty() && offHand.getItem() instanceof SporeWeaponData);
+        } else if (directEntity instanceof Projectile proj) {
+            if (proj.getOwner() instanceof LivingEntity owner) {
+                ItemStack mainHand = owner.getMainHandItem();
+                ItemStack offHand = owner.getOffhandItem();
+                isSporeWeapon = (!mainHand.isEmpty() && mainHand.getItem() instanceof SporeWeaponData)
+                             || (!offHand.isEmpty() && offHand.getItem() instanceof SporeWeaponData);
+                // Spore枪械弹射物：自身即Spore武器
+                if (!isSporeWeapon && directEntity instanceof com.Harbinger.Spore.Sentities.Projectile.AbstractGunProjectile) {
+                    isSporeWeapon = true;
+                }
+            }
+        }
+
+        if (!isSporeWeapon) return;
+
+        // 清除MC原版无敌帧 — 保证hurt()继续处理
+        target.invulnerableTime = 0;
+        // 清除Spore NBT真实无敌帧（防御Spore实体的CoreMod层保护）
+        target.getPersistentData().remove("spore_real_invuln");
+
+        // 直接执行 bypass 直写（在无敌帧检查之前就改血，不依赖后续 hurt()/hurtEnemy() 链路）
+        // 对其他模组（加速器、Apollyon等）的自定义无敌帧同样有效
+        if (!(target instanceof Infected || target instanceof UtilityEntity)) {
+            double pct = SConfig.SERVER.default_percentage_damage.get();
+            float trueDmg = target.getMaxHealth() * (float)(pct / 100.0);
+            double reduction = SConfig.SERVER.force_health_reduction.get();
+            float totalReduction = trueDmg + (float)reduction;
+            if (totalReduction > 0) {
+                com.Harbinger.Spore.util.UnsafeHealthHelper.addHealth(target, -totalReduction);
+            }
+            // 禁疗 + 追伤标记
+            target.getPersistentData().putBoolean("spore_frost_antiheal", true);
+            target.getPersistentData().putLong("spore_frost_antiheal_time",
+                    target.level().getGameTime() + 60);
+            float chaseDmg = Math.max(1.0f, totalReduction * 0.3f);
+            target.getPersistentData().putFloat("spore_hp_keeper", chaseDmg);
+            target.getPersistentData().putInt("spore_hp_keeper_ticks", 20);
+        }
+    }
+
+    /**
+     * 禁疗事件 — Forge事件级后备方案（CoreMod Bytecode HealPatcher 不可用时的第二道防线）
+     */
+    @SubscribeEvent
+    public static void onHeal(LivingHealEvent event) {
+        LivingEntity entity = event.getEntity();
+        CompoundTag tag = entity.getPersistentData();
+        if (tag.contains("spore_frost_antiheal")) {
+            if (entity.level().getGameTime() < tag.getLong("spore_frost_antiheal_time")) {
+                // 禁疗中，阻断回血
+                com.Harbinger.Spore.Spore.LOGGER.info("[AntiHeal] 禁疗阻断: {} 回血={}", entity.getClass().getSimpleName(), event.getAmount());
+                event.setCanceled(true);
+            } else {
+                // 过期清理
+                tag.remove("spore_frost_antiheal");
+                tag.remove("spore_frost_antiheal_time");
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onSporeArmorProtect(LivingHurtEvent event) {
+        LivingEntity target = event.getEntity();
+        if (target.level().isClientSide) return;
+        if (target instanceof Player p && p.isCreative()) return;
+        if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.targetHasSporeArmor(target)) return;
+
+        // 1秒无敌帧检查
+        if (com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.isArmorInvulnerable(target)) {
+            event.setCanceled(true);
+            return;
+        }
+
+        // 1秒限伤（固定1点伤害）
+        float original = event.getAmount();
+        float capped = com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.limitArmorDamage(target, original);
+        if (capped <= 0f) {
+            event.setCanceled(true);
+            return;
+        }
+        event.setAmount(capped);
+
+        // 记录命中，启动 1 秒无敌帧
+        com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.recordArmorHit(target);
+    }
+
+    /** 盔甲被动回血（全套）：每帧恢复1点生命 */
+    @SubscribeEvent
+    public static void onSporeArmorRegen(LivingEvent.LivingTickEvent event) {
+        LivingEntity entity = event.getEntity();
+        if (entity.level().isClientSide) return;
+        if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.hasFullSporeArmorSet(entity)) return;
+        if (entity.getHealth() >= entity.getMaxHealth()) return;
+
+        entity.heal(1f);
+    }
+
+    /** 全套免疫一切负面效果 */
+    @SubscribeEvent
+    public static void onSporeArmorEffect(MobEffectEvent.Applicable event) {
+        LivingEntity entity = event.getEntity();
+        if (entity.level().isClientSide) return;
+        if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.hasFullSporeArmorSet(entity)) return;
+
+        MobEffectInstance effectInstance = event.getEffectInstance();
+        if (!effectInstance.getEffect().isBeneficial()) {
+            event.setResult(Event.Result.DENY);
+        }
+    }
+
+    /** 全套免疫击退 */
+    @SubscribeEvent
+    public static void onSporeArmorKnockback(LivingKnockBackEvent event) {
+        LivingEntity entity = event.getEntity();
+        if (entity.level().isClientSide) return;
+        if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.hasFullSporeArmorSet(entity)) return;
+
+        event.setCanceled(true);
+    }
+
+    @SubscribeEvent
+    public static void TickEvents(LivingEvent.LivingTickEvent event){
+        if (event.getEntity() instanceof Player player){
+            MobEffectInstance effectInstance = player.getEffect(Seffects.MADNESS.get());
+            if (effectInstance != null && effectInstance.getDuration() == 1){
+                int level = effectInstance.getAmplifier();
+                if (level > 0){
+                    effectInstance.update(new MobEffectInstance(Seffects.MADNESS.get(),12000,level-1));
+                }
+            }
+            if (player.tickCount % 400 == 0 && player.level().isClientSide){
+                AABB aabb = player.getBoundingBox().inflate(5);
+                List<BlockPos> list = new ArrayList<>();
+                for (BlockPos blockPos : BlockPos.betweenClosed(Mth.floor(aabb.minX), Mth.floor(aabb.minY), Mth.floor(aabb.minZ), Mth.floor(aabb.maxX), Mth.floor(aabb.maxY), Mth.floor(aabb.maxZ))){
+                    if (player.level().getBlockState(blockPos).is(BlockTags.create(new ResourceLocation("spore:fungal_blocks")))){
+                        list.add(blockPos);
+                    }
+                }
+                if (list.size() > 4){
+                    player.playSound(Ssounds.AREA_AMBIENT.get());
+                }
+            }
+        }
+        if (!(event.getEntity() instanceof Mob mob))
+            return;
+
+        if (!(mob.getTarget() instanceof ServerPlayer player))
+            return;
+
+        if (mob.tickCount % 20 != 0)
+            return;
+        if (mob instanceof Calamity){
+            SporePacketHandler.sendToClient(new SongInitializingPacket(0, true, true), player);
+        }
+        if (mob instanceof Vanguard){
+            SporePacketHandler.sendToClient(new SongInitializingPacket(1, true, true), player);
+        }
+        if (mob instanceof Vigil){
+            SporePacketHandler.sendToClient(new SongInitializingPacket(2, true, true), player);
+        }
+    }
+    @SubscribeEvent
+    public static void horseArmorTick(LivingEvent.LivingTickEvent event) {
+        if (!(event.getEntity() instanceof AbstractHorse horse)) return;
+
+        ItemStack armor = horse.getItemBySlot(EquipmentSlot.CHEST);
+
+        if (armor.getItem() instanceof SporeHorseArmor armorItem) {
+            armorItem.onHorseArmorTick(armor, horse.level(), horse);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onAttack(AttackEntityEvent event) {
+        Player player = event.getEntity();
+
+        if (player.getMainHandItem().getItem() instanceof AbstractSporeGun) {
+            event.setCanceled(true);
+        }
+    }
+    @SubscribeEvent
+    public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        Player player = event.getEntity();
+
+        if (player.getMainHandItem().getItem() instanceof AbstractSporeGun) {
+            event.setCanceled(true);
+        }
+    }
+}

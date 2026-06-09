@@ -1,0 +1,47 @@
+{
+  "replace": false,
+  "values": [
+    "spore:lab_block",
+    "spore:lab_block1",
+    "spore:lab_block2",
+    "spore:lab_block3",
+    "spore:lab_slab",
+    "spore:lab_slab1",
+    "spore:lab_slab2",
+    "spore:lab_slab3",
+    "spore:lab_stair",
+    "spore:iron_ladder",
+    "spore:container",
+    "spore:infested_stone",
+    "spore:infested_deepslate",
+    "spore:infested_end_stone",
+    "spore:infested_netherrack",
+    "spore:infested_cobblestone",
+    "spore:infested_cobbled_deepslate",
+    "spore:infested_laboratory_block",
+    "spore:infested_laboratory_block1",
+    "spore:infested_laboratory_block2",
+    "spore:infested_laboratory_block3",
+    "spore:overgrown_spawner",
+    "spore:zoaholic",
+    "spore:incubator",
+    "spore:cdu",
+    "spore:surgery_table",
+    "spore:frozen_remains",
+
+    "spore:crusted_bile",
+    "spore:vent_plate",
+    "spore:rusted_vent_plate",
+    "spore:vent_door",
+    "spore:reinforced_door",
+    "spore:rusted_reinforced_door",
+    "spore:frozen_reinforced_door",
+
+
+
+
+    "spore:fungal_shell",
+    "spore:mycelium_block",
+    "spore:mycelium_slab"
+  ]
+}

@@ -1,0 +1,43 @@
+# eclipse
+bin
+*.launch
+.settings
+.metadata
+.classpath
+.project
+
+# idea
+out
+*.ipr
+*.iws
+*.iml
+.idea
+
+# gradle
+build
+.gradle
+
+# other
+eclipse
+run
+
+# Files from Forge MDK
+forge*changelog.txt
+
+# macOS
+.DS_Store
+
+# Local dev artifacts
+_explore.sh
+_list.txt
+check_audit.sh
+claude_index.json
+
+# Compiled mod jar
+spore-sx.jar
+
+# Compiler args
+*.args
+
+# Claude AI project memory
+.claude/

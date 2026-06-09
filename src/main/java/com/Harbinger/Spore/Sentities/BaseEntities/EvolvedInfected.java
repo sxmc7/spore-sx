@@ -1,0 +1,74 @@
+package com.Harbinger.Spore.Sentities.BaseEntities;
+
+import com.Harbinger.Spore.Core.SConfig;
+import com.Harbinger.Spore.Core.Ssounds;
+import com.Harbinger.Spore.Sentities.EvolvedInfected.Scamper;
+import net.minecraft.core.BlockPos;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.Difficulty;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+
+import static com.Harbinger.Spore.ExtremelySusThings.Utilities.biomass;
+
+public class EvolvedInfected extends Infected {
+    public EvolvedInfected(EntityType<? extends Monster> type, Level level) {
+        super(type, level);
+    }
+
+    @Override
+    public boolean blockBreakingParameter(BlockState blockstate, BlockPos blockpos) {
+        return super.blockBreakingParameter(blockstate, blockpos) || blockstate.is(biomass);
+    }
+
+    @Override
+    protected boolean canRide(Entity entity) {
+        if (entity instanceof Infected || entity instanceof UtilityEntity){
+            return super.canRide(entity);
+        }
+        return false;
+    }
+    
+    @Override
+    public boolean doHurtTarget(Entity entity) {
+        boolean flag = super.doHurtTarget(entity);
+        return flag;
+    }
+    
+    @Override
+    public boolean hurt(DamageSource source, float amount) {
+        // 集成DamageLimiter限伤系统
+        if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.isRegistered(this)) {
+            com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.registerEntity(this);
+            com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.setDamageCap(this, (float)getDamageCap());
+        }
+        
+        float limitedAmount = com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.limitDamage(this, source, amount);
+        
+        if(this.level().getDifficulty() == Difficulty.HARD && limitedAmount > getDamageCap() && SConfig.SERVER.damagecap.get()){
+            return super.hurt(source, (float) getDamageCap());
+        }
+        return super.hurt(source, limitedAmount);
+    }
+    public double getDamageCap(){
+        return getMaxHealth()/100.0;
+    }
+
+    @Override
+    public boolean canStarve() {
+        return false;
+    }
+
+    protected SoundEvent getHurtSound(DamageSource p_34327_) {
+        return Ssounds.EVOLVE_HURT.get();
+    }
+    @Override
+    public boolean removeWhenFarAway(double p_21542_) {
+        return this.getLinked() && !(this instanceof Scamper);
+    }
+}

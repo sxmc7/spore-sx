@@ -1,0 +1,33 @@
+{
+  "parent": "spore:spore",
+  "display": {
+    "icon": {
+      "item": "spore:corrupted_record"
+    },
+    "title": {
+      "translate": "advancement.spore.lore_1.title"
+    },
+    "description": {
+      "translate": "advancement.spore.lore_1.description"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "pick_up_compound_plate": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "tag": "spore:disks"
+          }
+        ]
+      }
+    }
+  },
+  "rewards": {
+    "experience": 50
+  }
+}
