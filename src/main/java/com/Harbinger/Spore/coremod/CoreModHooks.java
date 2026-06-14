@@ -206,9 +206,10 @@ public class CoreModHooks {
         }
 
         boolean isSpore = entity.getClass().getName().startsWith("com.Harbinger.Spore.");
-        // 非 Spore 实体或血量未减少 → 直接放行（仅 Spore 实体需记录影子备份）
-        if (!isSpore || newHealth >= currentHealth) {
-            if (isSpore) recordHealthBackup(entity, newHealth);
+        boolean isArmorProtected = !isSpore && DamageLimiter.hasFullSporeArmorSet(entity);
+
+        if ((!isSpore && !isArmorProtected) || newHealth >= currentHealth) {
+            if (isSpore || isArmorProtected) recordHealthBackup(entity, newHealth);
             return newHealth;
         }
 
@@ -254,6 +255,15 @@ public class CoreModHooks {
             }
             return false;
         }
+        // 全套 Spore 装备：免疫反治疗
+        if (DamageLimiter.hasFullSporeArmorSet(entity)) {
+            CompoundTag tag2 = entity.getPersistentData();
+            if (tag2.contains("spore_frost_antiheal")) {
+                tag2.remove("spore_frost_antiheal");
+                tag2.remove("spore_frost_antiheal_time");
+            }
+            return false;
+        }
         // Non-Spore: check anti-heal flag set by ExtremeFrost enchantment or Spore weapon true damage
         CompoundTag tag = entity.getPersistentData();
         if (tag.contains("spore_frost_antiheal")) {
@@ -265,5 +275,33 @@ public class CoreModHooks {
             tag.remove("spore_frost_antiheal_time");
         }
         return false;
+    }
+
+    /**
+     * getHealth() ASM 钩子 — 在每个 FRETURN 前调用。
+     * 当 setHealth(0) 或直写导致 getHealth() 返回 0 时，阻止进入 tickDeath。
+     * 仅对全套 Spore 装备生效。
+     */
+    public static float guardGetHealth(LivingEntity entity, float value) {
+        if (value > 0) return value;
+        if (entity == null) return value;
+        try {
+            boolean hasArmor = DamageLimiter.hasFullSporeArmorSet(entity);
+            if (hasArmor) {
+                float maxHealth = entity.getMaxHealth();
+                float safe = maxHealth > 0 ? maxHealth : 20.0f;
+                com.Harbinger.Spore.Spore.LOGGER.info(
+                    "[GetHealth] 拦截零值! entity={} 原值={} 返回={}",
+                    entity.getClass().getSimpleName(), value, safe);
+                return safe;
+            } else {
+                com.Harbinger.Spore.Spore.LOGGER.debug(
+                    "[GetHealth] 零值但无装备: entity={} value={}",
+                    entity.getClass().getSimpleName(), value);
+            }
+        } catch (Exception e) {
+            com.Harbinger.Spore.Spore.LOGGER.error("[GetHealth] 异常: " + e.getMessage());
+        }
+        return value;
     }
 }

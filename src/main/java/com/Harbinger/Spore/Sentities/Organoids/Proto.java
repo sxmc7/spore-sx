@@ -510,8 +510,7 @@ public class Proto extends Organoid implements CasingGenerator, FoliageSpread, C
         if (source.getEntity() instanceof LivingEntity attacker) {
             if (com.Harbinger.Spore.Senchantments.ExtremeFrostEnchantment.hasExtremeFrost(attacker)) {
                 int frostLevel = com.Harbinger.Spore.Senchantments.ExtremeFrostEnchantment.getExtremeFrostLevel(attacker);
-                float extraDamage = this.getMaxHealth() * (frostLevel * 0.5f);
-                float totalTrueDamage = extraDamage * com.Harbinger.Spore.Senchantments.ExtremeFrostEnchantment.getDamageMultiplier(frostLevel);
+                float totalTrueDamage = 3.0f + this.getMaxHealth() * 0.03f * frostLevel;
                 com.Harbinger.Spore.util.HealthFieldUtil.addHealth(this, -totalTrueDamage);
             }
             if (!attacker.getMainHandItem().isEmpty() && attacker.getMainHandItem().getItem() instanceof com.Harbinger.Spore.Sitems.BaseWeapons.SporeWeaponData) {

@@ -25,19 +25,34 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 public class ExtremeFrostEnchantment extends Enchantment {
     
     public ExtremeFrostEnchantment() {
-        super(Rarity.VERY_RARE, EnchantmentCategory.WEAPON, new EquipmentSlot[]{EquipmentSlot.MAINHAND});
+        super(Rarity.RARE, EnchantmentCategory.WEAPON, new EquipmentSlot[]{EquipmentSlot.MAINHAND});
     }
     
     @Override
     public int getMaxLevel() {
         return 3;
     }
-    
+
+    @Override
+    public boolean isTreasureOnly() {
+        return true;
+    }
+
+    @Override
+    public boolean isTradeable() {
+        return false;
+    }
+
+    @Override
+    public boolean isDiscoverable() {
+        return true;
+    }
+
     @Override
     public int getMinCost(int level) {
         return 15 + (level - 1) * 10;
     }
-    
+
     @Override
     public int getMaxCost(int level) {
         return this.getMinCost(level) + 15;

@@ -71,6 +71,7 @@ public class SporeLaunchPlugin implements ILaunchPluginService {
             if (isEntity) {
                 visitor = new HurtPatcherClassVisitor(visitor, className);
                 visitor = new SetHealthPatcherClassVisitor(visitor, className);
+                visitor = new GetHealthPatcherClassVisitor(visitor, className);
                 visitor = new HealPatcherClassVisitor(visitor, className);
                 visitor = new FreezePatcherClassVisitor(visitor, className);
             } else {

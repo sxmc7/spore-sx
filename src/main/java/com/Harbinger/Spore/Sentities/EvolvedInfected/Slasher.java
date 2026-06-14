@@ -128,9 +128,11 @@ public class Slasher extends EvolvedInfected implements ArmorPersentageBypass, V
         boolean flag = super.doHurtTarget(entity);
         
         if (flag && this.getVariant() == SlasherVariants.PIERCER && entity instanceof LivingEntity target && SConfig.SERVER.evolved_force_remove.get()) {
-            float reduction = SConfig.SERVER.evolved_health_reduction.get().floatValue();
-            com.Harbinger.Spore.util.UnsafeHealthHelper.setHealth(target,
-                    Math.max(0.0f, target.getHealth() - reduction));
+            if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.targetHasSporeArmor(target)) {
+                float reduction = SConfig.SERVER.evolved_health_reduction.get().floatValue();
+                com.Harbinger.Spore.util.UnsafeHealthHelper.setHealth(target,
+                        Math.max(0.0f, target.getHealth() - reduction));
+            }
         }
         
         return flag;

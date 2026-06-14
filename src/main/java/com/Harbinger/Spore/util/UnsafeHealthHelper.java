@@ -202,6 +202,10 @@ public final class UnsafeHealthHelper {
     public static void setHealth(LivingEntity entity, float health) {
         if (entity == null) return;
         health = Math.max(0.0f, health);
+        // 全套 Spore 装备保护: 拒绝直写减血
+        if (health < getHealth(entity) && com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.hasFullSporeArmorSet(entity)) {
+            return;
+        }
 
         // 路径1: Capability 实体 → 直接写入 capability
         ICustomHealth cap = getCap(entity);
@@ -221,7 +225,21 @@ public final class UnsafeHealthHelper {
                 if (!findAndWriteCustomHealth(entity, health)) {
                     // Delta 探测也失败 → 血量不在 Java 堆（堆外/XOR/自定义存储）
                     // 尝试反射调用外部 HealthStorage 写入
-                    tryExternalHealthWrite(entity, health);
+                    if (!tryExternalHealthWrite(entity, health)) {
+                        // 路径5 (JNI): 通过目标自身 hurt() 造成伤害（干净栈帧）
+                        if (SporeNativeBridge.isAvailable() && health < getHealth(entity)) {
+                            float damage = getHealth(entity) - health;
+                            net.minecraft.world.damagesource.DamageSource src = entity.damageSources().generic();
+                            // 5a: 先直接 hurt（不清字段，最小侵入）
+                            SporeNativeBridge.hurtViaNative(entity, src, damage);
+                            // 5b: 若仍无效，清除保护字段 + hurt
+                            if (entity.isAlive() && Math.abs(entity.getHealth() - health) > 1.0f) {
+                                SporeNativeBridge.adaptiveDamage(entity, src, damage, 3);
+                            }
+                            Spore.LOGGER.info("[UnsafeHealthHelper] JNI path on {}, damage={}, alive={}",
+                                    entity.getClass().getSimpleName(), String.format("%.1f", damage), entity.isAlive());
+                        }
+                    }
                 }
             }
         }
@@ -237,6 +255,10 @@ public final class UnsafeHealthHelper {
     /** 扣血（负值治疗） */
     public static void addHealth(LivingEntity entity, float amount) {
         if (entity == null || !entity.isAlive()) return;
+        // 全套 Spore 装备保护: 拒绝直写扣血
+        if (amount < 0 && com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.hasFullSporeArmorSet(entity)) {
+            return;
+        }
         float current = getHealth(entity);
         if (current <= 0.0f && amount <= 0.0f) return;
         setHealth(entity, current + amount);

@@ -70,6 +70,9 @@ public class Spore
         structureModifiers.register("spore_structure_spawns", StructureModification::makeCodec);
 
         // CoreMod 字节码变换由 ModLauncher 插件 (SporeLaunchPlugin) 在类加载时完成
+
+        // JNI 可选扩展（不影响核心功能）
+        com.Harbinger.Spore.util.SporeNativeBridge.init();
     }
     public void loadComplete(FMLLoadCompleteEvent event) {
         event.enqueueWork(Sfluids::postInit);

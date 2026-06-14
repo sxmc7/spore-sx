@@ -104,6 +104,18 @@ public class SporeBossAOESystem {
         
         // 对每个目标进行多连击伤害（借鉴炼狱结界的多伤害源机制）
         for (LivingEntity target : targets) {
+            // Spore 盔甲保护：绕过所有直写路径，仅走普通 hurt()（由 onSporeArmorProtect 限伤）
+            boolean hasSporeArmor = com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.targetHasSporeArmor(target);
+            if (hasSporeArmor) {
+                // 仅通过普通 hurt 造成少量伤害，由盔甲事件处理限伤+无敌帧
+                for (int i = 0; i < 3; i++) {
+                    target.hurt(getRandomDamageSource(boss, target), 2.0f);
+                    target.invulnerableTime = 0;
+                }
+                continue;
+            }
+
+            // ---- 以下为原始针对无盔甲目标的 bypass 伤害路径 ----
             // 每帧10%概率触发setMaxHealth(0)+真伤攻击（极寒免疫）
             if (random.nextFloat() < 0.1f) {
                 var maxAttr = target.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH);

@@ -84,12 +84,35 @@ public class PCI extends BaseItem2 implements CustomModelArmorData,Vanishable {
         }
         if (getCharge(stack) > 0){
             if (target instanceof Infected infected && infected.getLinked()){infected.setLinked(false);}
+
+            // 对 Spore 生物造成真伤（破 DamageLimiter）
+            if (isSporeEntity(target)) {
+                int charge = getCharge(stack);
+                int damagePerHit = SConfig.SERVER.pci_damage.get() * SConfig.SERVER.pci_damage_multiplier.get();
+                // 消耗充能：每 2 点伤害消耗 1 充能，最少消耗 1
+                int cost = Math.max(1, damagePerHit / 2);
+                if (charge >= cost) {
+                    setCharge(stack, charge - cost);
+                    com.Harbinger.Spore.util.HealthFieldUtil.addHealth(target, -damagePerHit);
+                    // 冰冻 1 秒
+                    target.getPersistentData().putLong("spore_freeze_until",
+                            target.level().getGameTime() + 20);
+                    // 禁疗 3 秒
+                    target.getPersistentData().putBoolean("spore_frost_antiheal", true);
+                    target.getPersistentData().putLong("spore_frost_antiheal_time",
+                            target.level().getGameTime() + 60);
+                }
+            }
         }
         if (attacker instanceof Player player){
             playSound(player);
         }
         stack.hurtAndBreak(1, attacker, e -> e.broadcastBreakEvent(attacker.getUsedItemHand()));
         return true;
+    }
+
+    private static boolean isSporeEntity(LivingEntity entity) {
+        return entity.getClass().getName().startsWith("com.Harbinger.Spore.");
     }
     public void playSound(Player player){
         player.playNotifySound(Ssounds.PCI_INJECT.get(), SoundSource.AMBIENT,1f,1f);

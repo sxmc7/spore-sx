@@ -107,9 +107,11 @@ public class Hvindicator extends Hyper implements RangedAttackMob {
             boolean flag = super.doHurtTarget(entity);
             
             if (flag && entity instanceof LivingEntity target && SConfig.SERVER.grinding_force_remove.get()) {
-                float reduction = SConfig.SERVER.grinding_health_reduction.get().floatValue();
-                com.Harbinger.Spore.util.UnsafeHealthHelper.setHealth(target,
-                        Math.max(0.0f, target.getHealth() - reduction));
+                if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.targetHasSporeArmor(target)) {
+                    float reduction = SConfig.SERVER.grinding_health_reduction.get().floatValue();
+                    com.Harbinger.Spore.util.UnsafeHealthHelper.setHealth(target,
+                            Math.max(0.0f, target.getHealth() - reduction));
+                }
             }
             
             return flag;

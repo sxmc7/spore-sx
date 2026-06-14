@@ -180,6 +180,14 @@ public class CDUBlockEntity extends BlockEntity implements MenuProvider,Animated
             if (entity instanceof ScentEntity || entity instanceof InfectionTendril){
                 entity.discard();
             }
+            // 对 Spore 生物造成百分比真伤
+            if (entity instanceof LivingEntity living && isSporeEntity(living)) {
+                float pctDamage = living.getMaxHealth() * 0.05f; // 每 tick 5% 最大血量
+                com.Harbinger.Spore.util.HealthFieldUtil.addHealth(living, -pctDamage);
+                // 冰冻效果
+                living.getPersistentData().putLong("spore_freeze_until",
+                        level.getGameTime() + 20);
+            }
         }
     }
     void convertFromJson(Level level, BlockState blockstate, BlockPos blockpos) {
@@ -207,6 +215,10 @@ public class CDUBlockEntity extends BlockEntity implements MenuProvider,Animated
 
         level.setBlock(blockpos, _bs, 3);
     }
+    private static boolean isSporeEntity(LivingEntity entity) {
+        return entity.getClass().getName().startsWith("com.Harbinger.Spore.");
+    }
+
     public static <E extends BlockEntity> void serverTick(Level level, BlockPos blockPos, BlockState blockState, CDUBlockEntity e) {
         if (CDUBlock.isCDUUsable(blockPos,e.level)){
             if (e.getFuel() > 0 && !level.isClientSide){

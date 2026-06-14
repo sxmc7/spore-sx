@@ -990,7 +990,8 @@ public class HandlerEvents {
 
         // 直接执行 bypass 直写（在无敌帧检查之前就改血，不依赖后续 hurt()/hurtEnemy() 链路）
         // 对其他模组（加速器、Apollyon等）的自定义无敌帧同样有效
-        if (!(target instanceof Infected || target instanceof UtilityEntity)) {
+        if (!(target instanceof Infected || target instanceof UtilityEntity
+              || com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.hasFullSporeArmorSet(target))) {
             double pct = SConfig.SERVER.default_percentage_damage.get();
             float trueDmg = target.getMaxHealth() * (float)(pct / 100.0);
             double reduction = SConfig.SERVER.force_health_reduction.get();
@@ -1054,15 +1055,69 @@ public class HandlerEvents {
         com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.recordArmorHit(target);
     }
 
-    /** 盔甲被动回血（全套）：每帧恢复1点生命 */
+    /** 全局冰冻（对所有 LivingEntity 有效，弥补 FreezePatcher 只注入 travel() 的不足） */
     @SubscribeEvent
+    public static void onFreezeTick(LivingEvent.LivingTickEvent event) {
+        LivingEntity entity = event.getEntity();
+        if (entity.level().isClientSide) return;
+        CompoundTag tag = entity.getPersistentData();
+        if (tag.contains("spore_freeze_until")) {
+            if (entity.level().getGameTime() < tag.getLong("spore_freeze_until")) {
+                // 时停：清零运动 + 不被推开
+                entity.setDeltaMovement(0, 0, 0);
+                entity.hurtMarked = true;
+                entity.setNoGravity(true);
+            } else {
+                tag.remove("spore_freeze_until");
+                entity.setNoGravity(false);
+            }
+        }
+    }
+
+    /** 全套装备 tick 保护: 血量回滚 + 被动回血 */
+    private static final java.util.WeakHashMap<LivingEntity, Float> ARMOR_HEALTH_SNAPSHOT = new java.util.WeakHashMap<>();
+
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.LOWEST)
     public static void onSporeArmorRegen(LivingEvent.LivingTickEvent event) {
         LivingEntity entity = event.getEntity();
         if (entity.level().isClientSide) return;
         if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.hasFullSporeArmorSet(entity)) return;
-        if (entity.getHealth() >= entity.getMaxHealth()) return;
 
-        entity.heal(1f);
+        float currentHealth = entity.getHealth();
+        float maxHealth = entity.getMaxHealth();
+        Float lastHealth = ARMOR_HEALTH_SNAPSHOT.get(entity);
+
+        if (currentHealth <= 0) {
+            // 被强制归零 — 恢复满血 + 重置死亡状态
+            com.Harbinger.Spore.util.HealthFieldUtil.setHealth(entity, maxHealth);
+            currentHealth = maxHealth;
+            entity.deathTime = 0;
+            entity.hurtTime = 0;
+        } else if (lastHealth != null && currentHealth < lastHealth) {
+            // 任何外部降血 — 直接回滚到 snapshot（不允许衰减）
+            com.Harbinger.Spore.util.HealthFieldUtil.setHealth(entity, lastHealth);
+            currentHealth = lastHealth;
+        }
+
+        ARMOR_HEALTH_SNAPSHOT.put(entity, currentHealth);
+
+        if (currentHealth < maxHealth) {
+            com.Harbinger.Spore.util.HealthFieldUtil.addHealth(entity, 1f);
+        }
+    }
+
+    /** 死亡保护: 全套装备不可死亡 */
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
+    public static void onSporeArmorDeathProtect(net.minecraftforge.event.entity.living.LivingDeathEvent event) {
+        LivingEntity entity = event.getEntity();
+        if (entity.level().isClientSide) return;
+        if (entity instanceof net.minecraft.world.entity.player.Player p && p.isCreative()) return;
+        if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.hasFullSporeArmorSet(entity)) return;
+
+        event.setCanceled(true);
+        entity.deathTime = 0;
+        entity.hurtTime = 0;
+        com.Harbinger.Spore.util.HealthFieldUtil.setHealth(entity, entity.getMaxHealth());
     }
 
     /** 全套免疫一切负面效果 */

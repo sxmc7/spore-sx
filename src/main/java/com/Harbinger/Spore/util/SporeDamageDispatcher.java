@@ -27,6 +27,10 @@ public class SporeDamageDispatcher {
         if (target instanceof net.minecraft.world.entity.player.Player p && p.isCreative()) {
             return;
         }
+        // 跳过穿 Spore 装备的目标
+        if (com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.targetHasSporeArmor(target)) {
+            return;
+        }
 
         double percentage = getPercentageDamage(attacker);
         float totalDamage = baseDamage;

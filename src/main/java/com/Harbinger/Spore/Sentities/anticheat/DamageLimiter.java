@@ -125,23 +125,25 @@ public class DamageLimiter {
 
     private static class InvulnData {
         long lastHitTick = -1;
-        int currentInvuln = BASE_INVULN_TICKS;  // 本段无敌帧长度
-        int consecutiveHits = 0;                 // 连续命中计数
+        int currentInvuln;
+        int consecutiveHits = 0;
+        final int baseInvuln;
+        final int maxInvuln;
 
-        /** 检查是否在无敌帧内 */
+        InvulnData() { this.baseInvuln = BASE_INVULN_TICKS; this.maxInvuln = MAX_INVULN_TICKS; this.currentInvuln = baseInvuln; }
+        InvulnData(int baseInvuln, int maxInvuln) { this.baseInvuln = baseInvuln; this.maxInvuln = maxInvuln; this.currentInvuln = baseInvuln; }
+
         boolean isInvulnerable(long currentTick) {
             return lastHitTick >= 0 && (currentTick - lastHitTick) < currentInvuln;
         }
 
-        /** 记录一次命中，更新无敌帧（自适应） */
         void recordHit(long currentTick) {
             if (lastHitTick >= 0 && (currentTick - lastHitTick) < CONSECUTIVE_WINDOW) {
                 consecutiveHits++;
-                // 每连续命中 2 次，无敌帧扩展一次（上限 MAX）
-                currentInvuln = Math.min(MAX_INVULN_TICKS, BASE_INVULN_TICKS + consecutiveHits * 5);
+                currentInvuln = Math.min(maxInvuln, baseInvuln + consecutiveHits * 5);
             } else {
                 consecutiveHits = 0;
-                currentInvuln = BASE_INVULN_TICKS;
+                currentInvuln = baseInvuln;
             }
             lastHitTick = currentTick;
         }
@@ -302,24 +304,36 @@ public class DamageLimiter {
     }
 
     // ======== Spore盔甲限伤系统 ========
-    /** 盔甲无敌帧：1秒（20 tick） */
+    /** 非全套：固定无敌帧 20 tick */
     private static final int ARMOR_INVULN_TICKS = 20;
-    /** 盔甲限伤：与 Spore 生物同级（每 tick 窗口） */
     private static final WeakHashMap<LivingEntity, Long> ARMOR_LAST_HIT = new WeakHashMap<>();
 
-    /** 检查目标是否在盔甲无敌帧内 */
+    /** 全套：自适应无敌帧 (20-40 tick, 起始=原有固定值, 最大=实体级) */
+    private static final int ARMOR_BASE_INVULN = 20;
+    private static final int ARMOR_MAX_INVULN = 40;
+    private static final WeakHashMap<LivingEntity, InvulnData> ARMOR_ADAPTIVE_INVULN = new WeakHashMap<>();
+
     public static boolean isArmorInvulnerable(LivingEntity entity) {
         if (entity == null || entity.level() == null) return false;
+        long tick = entity.level().getGameTime();
+        if (hasFullSporeArmorSet(entity)) {
+            InvulnData inv = ARMOR_ADAPTIVE_INVULN.get(entity);
+            if (inv == null) return false;
+            return inv.isInvulnerable(tick);
+        }
         Long lastHit = ARMOR_LAST_HIT.get(entity);
         if (lastHit == null) return false;
-        long tick = entity.level().getGameTime();
         return (tick - lastHit) < ARMOR_INVULN_TICKS;
     }
 
-    /** 记录一次盔甲命中（重置无敌帧计时） */
     public static void recordArmorHit(LivingEntity entity) {
         if (entity == null || entity.level() == null) return;
-        ARMOR_LAST_HIT.put(entity, entity.level().getGameTime());
+        if (hasFullSporeArmorSet(entity)) {
+            InvulnData inv = ARMOR_ADAPTIVE_INVULN.computeIfAbsent(entity, k -> new InvulnData(ARMOR_BASE_INVULN, ARMOR_MAX_INVULN));
+            inv.recordHit(entity.level().getGameTime());
+        } else {
+            ARMOR_LAST_HIT.put(entity, entity.level().getGameTime());
+        }
     }
 
     /** Spore盔甲限伤（非Spore攻击者）：固定1点伤害，1秒窗口 */

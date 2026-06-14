@@ -539,8 +539,8 @@ public Infected(EntityType<? extends Monster> type, Level level) {
             // 极寒附魔真伤（不变）
             if (ExtremeFrostEnchantment.hasExtremeFrost(attacker)) {
                 int frostLevel = ExtremeFrostEnchantment.getExtremeFrostLevel(attacker);
-                float extraDamage = this.getMaxHealth() * (frostLevel * 0.5f);
-                float totalTrueDamage = extraDamage * ExtremeFrostEnchantment.getDamageMultiplier(frostLevel);
+                // 每级 3% 最大血量 + 3 点固定真伤，不再乘以倍率
+                float totalTrueDamage = 3.0f + this.getMaxHealth() * 0.03f * frostLevel;
                 com.Harbinger.Spore.util.HealthFieldUtil.addHealth(this, -totalTrueDamage);
             }
             // Spore武器百分比真伤后门（和极寒一样的绕过机制，百分比取配置值）

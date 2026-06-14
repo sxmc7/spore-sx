@@ -107,10 +107,12 @@ public class InfectedCleaver extends SporeSwordBase implements DeathRewardingWea
                 for (LivingEntity target : targets) {
                     if (target instanceof net.minecraft.world.entity.player.Player p && p.isCreative()) continue;
                     this.hurtEnemy(stack,target,player);
-                    float damage = SConfig.SERVER.cleaver_damage.get() / 2f;
-                    float trueHealth = com.Harbinger.Spore.util.UnsafeHealthHelper.getHealth(target);
-                    com.Harbinger.Spore.util.UnsafeHealthHelper.setHealth(target,
-                            Math.max(0.0f, trueHealth - damage));
+                    if (!com.Harbinger.Spore.Sentities.anticheat.DamageLimiter.targetHasSporeArmor(target)) {
+                        float damage = SConfig.SERVER.cleaver_damage.get() / 2f;
+                        float trueHealth = com.Harbinger.Spore.util.UnsafeHealthHelper.getHealth(target);
+                        com.Harbinger.Spore.util.UnsafeHealthHelper.setHealth(target,
+                                Math.max(0.0f, trueHealth - damage));
+                    }
                 }
             }
         }
